@@ -45,7 +45,8 @@ docker-compose.override.yml
 spark-warehouse/
 metastore_db/
 derby.log
-
+checkpoints/
+output/
 # ================================
 # Airflow
 # ================================

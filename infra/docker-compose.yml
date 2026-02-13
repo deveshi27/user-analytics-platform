@@ -25,3 +25,29 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  ingestion-service:
+    build:
+      context: ../ingestion-service
+    container_name: ingestion-service
+    depends_on:
+      kafka:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  spark:
+    build:
+      context: ../spark-streaming
+    container_name: spark-streaming
+    depends_on:
+      kafka:
+        condition: service_started
+    volumes:
+      - ../spark-streaming/logs:/opt/spark/logs
+      - ../spark-streaming/checkpoints:/opt/spark/checkpoints
+      - ../spark-streaming/output:/opt/spark/output
+    restart: unless-stopped
+    networks:
+      - default
