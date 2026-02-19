@@ -2,11 +2,12 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     from_json,
     col,
-    to_date
+    to_date,
+    lit
 )
 from schemas import event_schema
 from aggregations import aggregate_events
-
+from es_writer import write_to_es
 # -----------------------------
 # Kafka config
 # -----------------------------
@@ -21,6 +22,12 @@ SILVER_PATH = "s3a://user-analytics-datalake-dev/silver/user_metrics/"
 
 CHECKPOINT_BRONZE = "s3a://user-analytics-datalake-dev/checkpoints/spark/bronze/"
 CHECKPOINT_SILVER = "s3a://user-analytics-datalake-dev/checkpoints/spark/silver/"
+
+# -----------------------------
+# Elasticsearch config
+# -----------------------------
+ES_HOST = "http://elasticsearch:9200"
+ES_INDEX = "user_metrics_silver"
 
 # -----------------------------
 # Spark session
@@ -90,6 +97,32 @@ silver_query = (
     .option("path", SILVER_PATH)
     .option("checkpointLocation", CHECKPOINT_SILVER)
     .outputMode("append")
+    .start()
+)
+# -----------------------------
+# 5️⃣ ELASTICSEARCH — Silver indexing (REST)
+# -----------------------------
+
+def write_batch_to_es(batch_df, batch_id):
+    es_df = (
+        batch_df
+        .withColumn("window_start", col("window").getField("start"))
+        .withColumn("window_end", col("window").getField("end"))
+        .drop("window")
+    )
+
+    records = [row.asDict() for row in es_df.collect()]
+    write_to_es("user_metrics_silver", records)
+
+es_query = (
+    silver_df
+    .writeStream
+    .foreachBatch(write_batch_to_es)
+    .outputMode("update")
+    .option(
+        "checkpointLocation",
+        "s3a://user-analytics-datalake-dev/checkpoints/spark/es/"
+    )
     .start()
 )
 

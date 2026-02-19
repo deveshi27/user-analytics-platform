@@ -1,4 +1,7 @@
 services:
+  # =============================
+  # ZOOKEEPER
+  # =============================
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: zookeeper
@@ -7,6 +10,10 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+
+  # =============================
+  # KAFKA
+  # =============================
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -24,6 +31,10 @@ services:
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  # =============================
+  # INGESTION SERVICE
+  # =============================
+
   ingestion-service:
     build:
       context: ../ingestion-service
@@ -34,22 +45,68 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
-
+  # =============================
+  # SPARK STREAMING
+  # =============================
   spark:
     build:
       context: ../spark-streaming
     container_name: spark-streaming
+    env_file:
+    - .env
     depends_on:
       kafka:
         condition: service_started
     volumes:
       - ~/.aws:/root/.aws:ro
+      - spark-checkpoints:/opt/spark/checkpoints
     environment:
       - AWS_PROFILE=default
     restart: unless-stopped
     networks:
       - default
-  
+
+  # =============================
+  # ELASTICSEARCH
+  # =============================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: elasticsearch
+    env_file:
+      - .env
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - default
+
+  # =============================
+  # KIBANA
+  # =============================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    environment:
+          - ELASTICSEARCH_HOSTS=${ELASTIC_HOST}
+          - ELASTICSEARCH_USERNAME=${ELASTIC_USERNAME}
+          - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
+    ports:
+      - "5601:5601"
+    networks:
+      - default
+
+  # =============================
+  # POSTGRES (AIRFLOW METADATA DB)
+  # =============================
+
   postgres:
     image: postgres:13
     container_name: airflow-postgres
@@ -138,4 +195,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  es_data:
   airflow-db:
+  spark-checkpoints:

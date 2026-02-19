@@ -2,32 +2,40 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.exceptions import AirflowFailException
 from datetime import datetime, timedelta
-import os, time
+import boto3
+import time
 
-SPARK_OUTPUT_DIR = "/opt/spark/output"
+BUCKET = "user-analytics-datalake-dev"
+PREFIX = "silver/user_metrics/"   # or bronze/events_raw/
 MAX_STALE_MINUTES = 10
 
 
-def check_spark_output():
-    if not os.path.exists(SPARK_OUTPUT_DIR):
-        raise AirflowFailException("Spark output directory missing")
+def check_spark_s3_output():
+    s3 = boto3.client("s3")
 
-    files = [
-        os.path.join(SPARK_OUTPUT_DIR, f)
-        for f in os.listdir(SPARK_OUTPUT_DIR)
-        if f.endswith(".parquet")
-    ]
+    response = s3.list_objects_v2(
+        Bucket=BUCKET,
+        Prefix=PREFIX
+    )
 
-    if not files:
-        raise AirflowFailException("No parquet files found")
+    if "Contents" not in response:
+        raise AirflowFailException("No Spark output found in S3")
 
-    latest = max(files, key=os.path.getmtime)
-    age_min = (time.time() - os.path.getmtime(latest)) / 60
+    latest_obj = max(
+        response["Contents"],
+        key=lambda x: x["LastModified"]
+    )
 
-    if age_min > MAX_STALE_MINUTES:
-        raise AirflowFailException("Spark output is stale")
+    age_minutes = (
+        time.time() - latest_obj["LastModified"].timestamp()
+    ) / 60
 
-    print("Spark streaming healthy")
+    if age_minutes > MAX_STALE_MINUTES:
+        raise AirflowFailException(
+            f"Spark output stale: {age_minutes:.1f} minutes old"
+        )
+
+    print("✅ Spark streaming healthy (S3 updated)")
 
 
 default_args = {
@@ -45,6 +53,6 @@ with DAG(
 ) as dag:
 
     PythonOperator(
-        task_id="check_spark_output",
-        python_callable=check_spark_output
+        task_id="check_spark_s3_output",
+        python_callable=check_spark_s3_output
     )
