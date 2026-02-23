@@ -104,6 +104,25 @@ services:
       - default
 
   # =============================
+  # ANALYTICS API SERVICE
+  # =============================
+
+  analytics-api:
+    build:
+      context: ../analytics-api
+    container_name: analytics-api
+    env_file:
+      - .env
+    environment:
+      - ANALYTICS_API_KEY=${ANALYTICS_API_KEY}
+    depends_on:
+      elasticsearch:
+        condition: service_started
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  # =============================
   # POSTGRES (AIRFLOW METADATA DB)
   # =============================
 
